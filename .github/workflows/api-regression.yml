@@ -1,0 +1,118 @@
+# MonetaLab M1 — PR regression for the backend API and database (PRD CI-01).
+# Plan: docs/slice-2-plan.md. Decisions: D-012, D-014, D-015 in docs/decisions.md.
+# CI only: nothing is deployed. No secrets are used. The DB credentials are disposable
+# values for the ephemeral, job-local service container (same as docker-compose.yml).
+name: API/DB regression
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit bash => -eo pipefail
+    working-directory: backend
+
+jobs:
+  api-db-regression:
+    name: api-db-regression # required status check name (D-S2-10). Keep stable.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgres://monetalab:monetalab_local_only@127.0.0.1:55432/monetalab
+    services:
+      postgres:
+        image: postgres:16.16-alpine
+        env:
+          POSTGRES_USER: monetalab
+          POSTGRES_PASSWORD: monetalab_local_only
+          POSTGRES_DB: monetalab
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U monetalab -d monetalab"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js (version from .nvmrc)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies (lockfile only)
+        run: npm ci
+
+      - name: Record tool and database versions
+        run: |
+          echo "node $(node --version), npm $(npm --version)"
+          node --input-type=module -e "
+            import pg from 'pg';
+            const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
+            await c.connect();
+            console.log('postgres', (await c.query('SHOW server_version')).rows[0].server_version);
+            await c.end();"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Apply migrations to a fresh database
+        id: migrate
+        run: npm run db:migrate
+
+      # The npm scripts write JUnit XML. tee keeps a copy of the spec output for the job summary.
+      # pipefail (shell: bash) keeps a test failure from being masked by tee.
+      - name: Unit tests
+        run: |
+          mkdir -p test-results
+          npm run test:unit:ci | tee test-results/unit.log
+
+      - name: Integration tests
+        # Still runs if unit tests failed, so one failure doesn't hide other results.
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: |
+          mkdir -p test-results
+          npm run test:integration:ci | tee test-results/integration.log
+
+      - name: Write job summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## API/DB regression"
+            for suite in unit integration; do
+              echo "### ${suite}"
+              if [ -f "test-results/${suite}.log" ]; then
+                echo '```'
+                grep -E '^ℹ (tests|suites|pass|fail|cancelled|skipped|todo) ' "test-results/${suite}.log" || echo "no summary lines found"
+                echo '```'
+              else
+                echo "_No results: the step did not run or crashed before reporting._"
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results (JUnit XML + logs)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-attempt-${{ github.run_attempt }}
+          path: backend/test-results/
+          if-no-files-found: warn
+          retention-days: 14
