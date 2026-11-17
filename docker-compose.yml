@@ -2,7 +2,7 @@
 # The credentials below are non-secret local defaults, and can be overridden from the shell environment.
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-monetalab}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-monetalab_local_only}

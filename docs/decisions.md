@@ -33,8 +33,8 @@ Format: ID, date, decision, scope, and the reason or source.
 
 | ID | Decision | Status |
 |---|---|---|
-| D-S2-04 | Who runs `git push` (owner or Claude) | Open |
-| D-S2-05 | Commit author email: switch to a verified GitHub noreply address before the first commit | Open. The owner must look up the address in GitHub settings. See `docs/slice-2-git-review.md`. |
+| D-S2-04 | Who runs `git push` (owner or Claude) | **Resolved 2026-11-17:** Claude pushes, but only when the owner gives explicit approval for each push (S2.2 precedent). |
+| D-S2-05 | Commit author email: switch to a verified GitHub noreply address before the first commit | **Resolved 2026-11-17:** the owner set and verified the GitHub noreply address in the repo-local git config. Both baseline commits use it. |
 | D-S2-12 | Optional negative-demo PR (S2.7) | Open |
 | D-S2-13 | Optional minimal `README.md` stub | Open |
 | D-S2-14 | Optional `actionlint` via Docker image | Open |

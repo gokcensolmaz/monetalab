@@ -5,7 +5,7 @@
   "description": "MonetaLab M1 backend (QA portfolio fixture)",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.2"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,7 +15,9 @@
     "start": "node src/server.ts",
     "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
-    "test": "npm run test:unit && npm run test:integration"
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit:ci": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/unit.junit.xml \"tests/unit/**/*.test.ts\"",
+    "test:integration:ci": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/integration.junit.xml \"tests/integration/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "24.19.2",
