@@ -1,0 +1,22 @@
+# Local development and test database only. Not for production use.
+# The credentials below are non-secret local defaults, and can be overridden from the shell environment.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-monetalab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-monetalab_local_only}
+      POSTGRES_DB: ${POSTGRES_DB:-monetalab}
+    ports:
+      # Bound to localhost only, on a non-default host port to avoid clashing with other local Postgres instances.
+      - "127.0.0.1:${MONETALAB_DB_PORT:-55432}:5432"
+    volumes:
+      - monetalab-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  monetalab-db:

@@ -1,0 +1,29 @@
+{
+  "name": "monetalab-backend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MonetaLab M1 backend (QA portfolio fixture)",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:up": "docker compose -f ../docker-compose.yml up -d --wait db",
+    "db:down": "docker compose -f ../docker-compose.yml down",
+    "db:migrate": "node src/db/migrate.ts",
+    "start": "node src/server.ts",
+    "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
+    "test": "npm run test:unit && npm run test:integration"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "fastify": "5.12.8",
+    "pg": "8.23.1"
+  }
+}
