@@ -17,9 +17,14 @@
     "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit:ci": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/unit.junit.xml \"tests/unit/**/*.test.ts\"",
-    "test:integration:ci": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/integration.junit.xml \"tests/integration/**/*.test.ts\""
+    "test:integration:ci": "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/integration.junit.xml \"tests/integration/**/*.test.ts\"",
+    "test:api": "playwright test",
+    "test:api:ci": "mkdir -p test-results && PLAYWRIGHT_REPORTS=1 playwright test",
+    "db:seed:demo": "node src/db/seed.ts",
+    "e2e:server": "node tests/api/support/e2e-server.ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "typescript": "7.0.2"

@@ -9,6 +9,9 @@ import { createEmptyDatabase } from './helpers/test-db.ts';
 
 // Categories (D-005): [INT] integration, [NEG] negative/edge case.
 
+// Every migration file in backend/migrations, in the order they must apply. Update when adding a migration.
+const ALL_MIGRATIONS = ['001_m1_foundation.sql', '002_m1_credit_integrity.sql'];
+
 const cleanups: Array<() => Promise<void>> = [];
 after(async () => {
   for (const fn of cleanups.reverse()) await fn();
@@ -31,9 +34,9 @@ async function query<T extends pg.QueryResultRow>(url: string, sql: string, para
 }
 
 describe('migration runner', () => {
-  it('[INT] fresh database: applies 001 and creates exactly the expected M1 tables', async () => {
+  it('[INT] fresh database: applies all M1 migrations in order and creates exactly the expected M1 tables', async () => {
     const db = await freshEmptyDb();
-    assert.deepEqual(await migrate(db.url), ['001_m1_foundation.sql']);
+    assert.deepEqual(await migrate(db.url), ALL_MIGRATIONS);
 
     const tables = await query<{ table_name: string }>(
       db.url,
@@ -41,7 +44,7 @@ describe('migration runner', () => {
     );
     assert.deepEqual(
       tables.map((t) => t.table_name),
-      ['bucket_balances', 'credit_ledger', 'operations', 'purchases', 'schema_migrations', 'sessions', 'users'],
+      ['bucket_balances', 'credit_ledger', 'credit_packages', 'operations', 'purchases', 'schema_migrations', 'sessions', 'users'],
     );
 
     const buckets = await query<{ b: string }>(db.url, `SELECT unnest(enum_range(NULL::credit_bucket))::text AS b`);
@@ -57,14 +60,14 @@ describe('migration runner', () => {
     await migrate(db.url);
     assert.deepEqual(await migrate(db.url), [], 'second run must apply nothing');
     const rows = await query<{ version: string }>(db.url, 'SELECT version FROM schema_migrations');
-    assert.deepEqual(rows.map((r) => r.version), ['001_m1_foundation.sql']);
+    assert.deepEqual(rows.map((r) => r.version).sort(), ALL_MIGRATIONS);
   });
 
   it('[NEG] concurrent runners on an empty database apply each migration exactly once', async () => {
     const db = await freshEmptyDb();
     const results = await Promise.all([migrate(db.url), migrate(db.url), migrate(db.url)]);
     const appliedCounts = results.map((r) => r.length).sort();
-    assert.deepEqual(appliedCounts, [0, 0, 1], `expected exactly one runner to apply, got ${JSON.stringify(results)}`);
+    assert.deepEqual(appliedCounts, [0, 0, ALL_MIGRATIONS.length], `expected exactly one runner to apply, got ${JSON.stringify(results)}`);
   });
 
   it('[NEG] refuses to run when an applied migration was modified (checksum mismatch)', async () => {

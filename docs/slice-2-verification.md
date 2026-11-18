@@ -74,6 +74,19 @@ This document was committed alone to `slice-2-ci` and pushed. The resulting PR c
 5. **No update policy (for example Dependabot) for SHA-pinned actions or npm dependencies.** Updates are manual and deliberate.
 6. **No iOS CI** yet (Slice 7). **No Playwright HTML report** yet (Slice 3).
 
+## 6a. Post-merge run on `main` (added 2026-11-17, after PR #1 was merged)
+
+| Check | Result | Source |
+|---|---|---|
+| PR #1 | `closed`, `merged=true`, merge commit `0d463312888502692768d1aa5f867f90f7b30f51`, merged 2026-11-17T14:32:32Z | [API] |
+| Local `main` | Fast-forwarded with `git pull --ff-only` from `0db5d23` to `0d46331`. Equal to `origin/main`, clean tree, nothing reset or forced. | [LOCAL] |
+| Run | https://github.com/gokcensolmaz/monetalab/actions/runs/44104246387 | [API] |
+| Event / branch / head | `push` / `main` / `0d46331` (the merge commit) | [API] |
+| Status / conclusion | `completed` / **`success`**, attempt 1, 14:32:35Z to 14:33:14Z | [API] |
+| Job | `api-db-regression` on `ubuntu-24.04`: `success`. All 12 workflow steps (Checkout to Upload test results) plus setup and teardown `success`. | [API] |
+| Artifact | `test-results-attempt-1`, 5,010 bytes, not expired, expires 2026-12-01T14:33:06Z, digest `sha256:493fef64c6063b007d5dbebcc12a938e941072ec94c9808e7cf3b561c457a498` | [API] |
+| Test counts (19 unit / 32 integration) in this run | **NOT VERIFIED.** The anonymous API refused the artifact download (`HTTP 401`) and the job logs (`HTTP 403`). The successful Unit tests and Integration tests steps mean no test failed, but the counts weren't seen. | — |
+
 ## 7. Remaining work
 
 - **Owner:** review PR #1 and merge it. Merging is the owner's decision. After the merge, the `push`-to-`main` run should be checked.
