@@ -204,6 +204,11 @@ describe('credit ledger', () => {
 
   it('[NEG] an operation debits each bucket at most once', async () => {
     const userId = await insertUser(db.pool);
+    // Since migration 002 a debit must be funded (the ledger trigger rejects overdrafts), so fund the bucket first.
+    await db.pool.query(
+      `INSERT INTO credit_ledger (user_id, bucket, delta, entry_type, seed_reason) VALUES ($1, 'SUBSCRIPTION', 100, 'SEED', 'test funding')`,
+      [userId],
+    );
     const operationId = await insertOperation(userId);
     const debit = () =>
       db.pool.query(
