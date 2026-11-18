@@ -91,16 +91,26 @@ jobs:
           mkdir -p test-results
           npm run test:integration:ci | tee test-results/integration.log
 
+      # HTTP API tests against the real server on a disposable DB (tests/api/support/global-setup.ts).
+      # Request-only tests: no browser binaries are installed or needed.
+      - name: API tests (Playwright)
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          mkdir -p test-results
+          npm run test:api:ci | tee test-results/api.log
+
       - name: Write job summary
         if: ${{ !cancelled() }}
         run: |
           {
             echo "## API/DB regression"
-            for suite in unit integration; do
+            for suite in unit integration api; do
               echo "### ${suite}"
               if [ -f "test-results/${suite}.log" ]; then
                 echo '```'
-                grep -E '^ℹ (tests|suites|pass|fail|cancelled|skipped|todo) ' "test-results/${suite}.log" || echo "no summary lines found"
+                grep -E '^ℹ (tests|suites|pass|fail|cancelled|skipped|todo) |^ +[0-9]+ (passed|failed|flaky|skipped|did not run|interrupted)' "test-results/${suite}.log" || echo "no summary lines found"
                 echo '```'
               else
                 echo "_No results: the step did not run or crashed before reporting._"
@@ -108,7 +118,7 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload test results (JUnit XML + logs)
+      - name: Upload test results (JUnit XML, Playwright HTML report, logs)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
