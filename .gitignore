@@ -32,3 +32,5 @@ coverage/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+*.xcresult
+ios/build/

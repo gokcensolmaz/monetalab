@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Local QA fixture: allow plain HTTP only to local addresses (127.0.0.1 / localhost) for the local backend. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Default backend URL. The iOS Simulator shares the Mac's network, so 127.0.0.1 reaches `npm start`. -->
+	<key>MonetaLabAPIBaseURL</key>
+	<string>http://127.0.0.1:3000</string>
+</dict>
+</plist>
