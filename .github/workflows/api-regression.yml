@@ -1,5 +1,7 @@
-# MonetaLab M1 — PR regression for the backend API and database (PRD CI-01).
-# Plan: docs/slice-2-plan.md. Decisions: D-012, D-014, D-015 in docs/decisions.md.
+# MonetaLab — PR regression for the backend API and database (PRD CI-01), M1 + M2.
+# Plan: docs/slice-2-plan.md. Decisions: D-012, D-014, D-015, D-033, D-036 in docs/decisions.md.
+# M2 time-dependent specs run against a second harness-owned server whose business clock is a temp file
+# (MONETALAB_TEST_CLOCK_FILE); no HTTP endpoint can change time.
 # CI only: nothing is deployed. No secrets are used. The DB credentials are disposable
 # values for the ephemeral, job-local service container (same as docker-compose.yml).
 name: API/DB regression
@@ -100,6 +102,15 @@ jobs:
         run: |
           mkdir -p test-results
           npm run test:api:ci | tee test-results/api.log
+
+      # M2 analytics (PRD §4): the deterministic report CLI must run against the freshly migrated schema.
+      # Output is kept as an artifact; the report's correctness is asserted in tests/integration/m2-integrity.test.ts.
+      - name: Analytics report smoke (local CLI)
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        run: |
+          mkdir -p test-results
+          npm run --silent analytics:report -- --from 2026-01-01T00:00:00Z --to 2026-01-08T00:00:00Z | tee test-results/analytics-report.json
+          node -e "const r = JSON.parse(require('fs').readFileSync('test-results/analytics-report.json','utf8')); if (!('paidChurn' in r) || !('trialConversion' in r)) process.exit(1)"
 
       - name: Write job summary
         if: ${{ !cancelled() }}
