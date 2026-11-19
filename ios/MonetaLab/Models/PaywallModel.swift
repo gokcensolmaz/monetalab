@@ -1,9 +1,12 @@
 import Foundation
 
-/// Paywall state: Subscription | Credits tabs (PRD §3.1, D-003).
-/// - Subscription plans are M1 previews only (purchase unavailable).
-/// - Credits packs are purchasable through the backend's deterministic mock billing provider.
-/// - "Watch an Ad — Earn 100 Credits" is shown but unavailable until M2.
+/// Paywall state: Subscription | Credits tabs (PRD §3.1), M2.
+/// - Subscription tab: weekly plans through the backend's deterministic MOCK subscription provider. The trial message is
+///   shown only when the server says this customer is eligible. An active subscriber can upgrade here.
+/// - Credits tab: consumable packs through the mock billing provider.
+/// - "Watch an Ad — Earn 100 Credits" (mock ad provider) is enabled only when the SERVER reports the customer eligible
+///   for the blocked operation (insufficient credits, daily quota left). It is never offered without a blocked action.
+/// The caller decides what happens with the returned wallet; this model never runs the blocked operation.
 @MainActor
 final class PaywallModel: ObservableObject {
     enum Tab: String, CaseIterable, Identifiable {
@@ -12,19 +15,31 @@ final class PaywallModel: ObservableObject {
     }
 
     @Published var tab: Tab = .credits
-    /// Selection is frozen while a purchase is in flight: the pending transaction id must stay bound to what was sent,
+    /// Selections are frozen while a request is in flight: a pending idempotency id must stay bound to what was sent,
     /// so a retry after an unknown outcome stays idempotent on the server.
     /// (`@Published` re-runs `didSet` on a write-back inside the observer, so the revert is guarded.)
     @Published var selectedPackageId: String? {
         didSet {
             guard !isReverting, oldValue != selectedPackageId else { return }
-            if isPurchasing { revert { selectedPackageId = oldValue } } else { pendingTransactionId = nil }
+            if isBusy { revert { selectedPackageId = oldValue } } else { pendingTransactionId = nil }
+        }
+    }
+    @Published var selectedPlanId: String? {
+        didSet {
+            guard !isReverting, oldValue != selectedPlanId else { return }
+            if isBusy { revert { selectedPlanId = oldValue } } else { pendingSubscriptionId = nil }
         }
     }
     @Published var mockOutcome: MockOutcome = .approved {
         didSet {
             guard !isReverting, oldValue != mockOutcome else { return }
-            if isPurchasing { revert { mockOutcome = oldValue } } else { pendingTransactionId = nil }
+            if isBusy { revert { mockOutcome = oldValue } } else { pendingTransactionId = nil; pendingSubscriptionId = nil }
+        }
+    }
+    @Published var adOutcome: MockAdOutcome = .completed {
+        didSet {
+            guard !isReverting, oldValue != adOutcome else { return }
+            if isBusy { revert { adOutcome = oldValue } } else { pendingAdEventId = nil }
         }
     }
     private var isReverting = false
@@ -34,28 +49,64 @@ final class PaywallModel: ObservableObject {
         isReverting = false
     }
     @Published private(set) var isPurchasing = false
+    @Published private(set) var isWatchingAd = false
     @Published private(set) var message: String?
+    @Published private(set) var adMessage: String?
+    @Published private(set) var subscriptionState: SubscriptionStateResponse?
+    @Published private(set) var adQuota: AdQuota?
+    @Published private(set) var adEligibility: AdEligibility?
+    @Published private(set) var loadError: String?
+
+    var isBusy: Bool { isPurchasing || isWatchingAd }
 
     let required: Int?
+    /// The blocked operation (e.g. "STANDARD"). Ads are only offered in that context (PRD §3.1, §7 #5).
+    let action: String?
     private let api: MonetaLabAPI
     private let token: () -> String?
     private let onUnauthenticated: () -> Void
     private let makeTransactionId: () -> String
-    /// Reused only when a purchase's outcome is unknown (network failure), so the retry is idempotent on the server.
+    /// Reused only when an outcome is unknown (network failure), so the retry is idempotent on the server.
     private(set) var pendingTransactionId: String?
+    private(set) var pendingSubscriptionId: String?
+    private(set) var pendingAdEventId: String?
 
-    init(required: Int?, api: MonetaLabAPI, token: @escaping () -> String?, onUnauthenticated: @escaping () -> Void,
+    init(required: Int?, action: String? = nil, api: MonetaLabAPI, token: @escaping () -> String?, onUnauthenticated: @escaping () -> Void,
          makeTransactionId: @escaping () -> String = { "ios-\(UUID().uuidString)" }) {
         self.required = required
+        self.action = action
         self.api = api
         self.token = token
         self.onUnauthenticated = onUnauthenticated
         self.makeTransactionId = makeTransactionId
     }
 
-    /// Continue: purchase the selected pack. Returns the server's wallet after the attempt (unchanged if not approved).
+    /// Server-decided trial message, present only when eligible.
+    var trialMessage: String? { subscriptionState?.trial.offer?.message }
+    var currentSubscription: SubscriptionInfo? { subscriptionState?.subscription }
+    var canWatchAd: Bool { action != nil && adEligibility?.eligible == true && !isBusy }
+
+    /// Loads subscription state and (for a blocked action) the ad quota. Safe to call repeatedly (re-opened paywall).
+    func load() async {
+        guard let token = token() else { return }
+        do {
+            subscriptionState = try await api.subscriptionState(token: token)
+            if let action {
+                let quota = try await api.adQuota(token: token, action: action)
+                adQuota = quota.quota
+                adEligibility = quota.eligibility
+            }
+            loadError = nil
+        } catch APIError.unauthenticated {
+            onUnauthenticated()
+        } catch {
+            loadError = (error as? APIError)?.userMessage ?? error.localizedDescription
+        }
+    }
+
+    /// Credits tab Continue: purchase the selected pack. Returns the server's wallet after the attempt.
     func continueTapped() async -> Wallet? {
-        guard let packageId = selectedPackageId, let token = token(), !isPurchasing else { return nil }
+        guard let packageId = selectedPackageId, let token = token(), !isBusy else { return nil }
         isPurchasing = true
         message = nil
         defer { isPurchasing = false }
@@ -69,9 +120,8 @@ final class PaywallModel: ObservableObject {
             case "CANCELLED": message = "Purchase cancelled. Your balance is unchanged."
             default: message = "Payment declined. Your balance is unchanged."
             }
-            if let required, response.wallet.total < required {
-                message = (message ?? "") + " You still need \((required - response.wallet.total).credits) more credits."
-            }
+            appendShortfall(response.wallet)
+            await refreshAdEligibility()
             return response.wallet
         } catch APIError.unauthenticated {
             pendingTransactionId = nil
@@ -83,5 +133,89 @@ final class PaywallModel: ObservableObject {
             message = (error as? APIError)?.userMessage ?? error.localizedDescription
         }
         return nil
+    }
+
+    /// Subscription tab Continue: subscribe (trial when the server says eligible), or upgrade an active plan.
+    func subscribeTapped(plans: [SubscriptionPlan]) async -> Wallet? {
+        guard let planId = selectedPlanId, let plan = plans.first(where: { $0.id == planId }), let token = token(), !isBusy else { return nil }
+        let current = currentSubscription.flatMap { sub in sub.entitled ? plans.first(where: { $0.id == sub.planId }) : nil }
+        if let current, plan.tier <= current.tier {
+            message = plan.id == current.id
+                ? "You already have \(current.name)."
+                : "Downgrades take effect at your next renewal. Change plans on the Plan tab."
+            return nil
+        }
+        isPurchasing = true
+        message = nil
+        defer { isPurchasing = false }
+        let id = pendingSubscriptionId ?? makeTransactionId()
+        pendingSubscriptionId = id
+        do {
+            let response = current == nil
+                ? try await api.purchaseSubscription(token: token, planId: plan.id, transactionId: id, mockOutcome: mockOutcome)
+                : try await api.changePlan(token: token, planId: plan.id, transactionId: id, mockOutcome: mockOutcome)
+            pendingSubscriptionId = nil
+            subscriptionState = SubscriptionStateResponse(subscription: response.subscription, trial: response.trial, wallet: response.wallet)
+            message = SubscriptionModel.describe(response)
+            appendShortfall(response.wallet)
+            await refreshAdEligibility()
+            return response.wallet
+        } catch APIError.unauthenticated {
+            pendingSubscriptionId = nil
+            onUnauthenticated()
+        } catch APIError.transport(let detail) {
+            message = APIError.transport(detail).userMessage
+        } catch {
+            pendingSubscriptionId = nil
+            message = (error as? APIError)?.userMessage ?? error.localizedDescription
+        }
+        return nil
+    }
+
+    /// Watch an Ad (mock). Only a server-verified completion grants 100 REWARD credits.
+    func watchAdTapped() async -> Wallet? {
+        guard let action, let token = token(), canWatchAd else { return nil }
+        isWatchingAd = true
+        adMessage = nil
+        defer { isWatchingAd = false }
+        let adEventId = pendingAdEventId ?? makeTransactionId()
+        pendingAdEventId = adEventId
+        do {
+            let response = try await api.watchAd(token: token, adEventId: adEventId, action: action, mockOutcome: adOutcome)
+            pendingAdEventId = nil
+            adQuota = response.quota
+            adMessage = response.result == "REWARDED"
+                ? "Added \(response.creditsGranted.credits) reward credits."
+                : "The ad was not completed. No credits were added."
+            await refreshAdEligibility()
+            return response.wallet
+        } catch APIError.unauthenticated {
+            pendingAdEventId = nil
+            onUnauthenticated()
+        } catch APIError.transport(let detail) {
+            adMessage = APIError.transport(detail).userMessage
+        } catch let APIError.server(_, code, message) {
+            pendingAdEventId = nil
+            adMessage = code == "DAILY_AD_LIMIT_REACHED" ? "You've reached today's limit of rewarded ads." : message
+            await refreshAdEligibility()
+        } catch {
+            pendingAdEventId = nil
+            adMessage = (error as? APIError)?.userMessage ?? error.localizedDescription
+        }
+        return nil
+    }
+
+    private func appendShortfall(_ wallet: Wallet) {
+        if let required, wallet.total < required {
+            message = (message ?? "") + " You still need \((required - wallet.total).credits) more credits."
+        }
+    }
+
+    private func refreshAdEligibility() async {
+        guard let action, let token = token() else { return }
+        if let quota = try? await api.adQuota(token: token, action: action) {
+            adQuota = quota.quota
+            adEligibility = quota.eligibility
+        }
     }
 }

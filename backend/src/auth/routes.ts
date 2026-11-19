@@ -91,9 +91,9 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool): void {
     return { token, expiresAt: session.rows[0]!.expires_at.toISOString(), user: toUser(user) };
   });
 
-  app.get('/me', { preHandler: guard }, async (request) => ({ user: authOf(request).user }));
+  app.get('/me', { onRequest: guard }, async (request) => ({ user: authOf(request).user }));
 
-  app.post('/auth/logout', { preHandler: guard }, async (request, reply) => {
+  app.post('/auth/logout', { onRequest: guard }, async (request, reply) => {
     // Revoke only this session. The conditions make concurrent or repeated logouts revoke exactly once.
     const { rowCount } = await pool.query(
       `UPDATE sessions SET revoked_at = now()

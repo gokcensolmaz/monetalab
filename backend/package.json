@@ -21,7 +21,8 @@
     "test:api": "playwright test",
     "test:api:ci": "mkdir -p test-results && PLAYWRIGHT_REPORTS=1 playwright test",
     "db:seed:demo": "node src/db/seed.ts",
-    "e2e:server": "node tests/api/support/e2e-server.ts"
+    "e2e:server": "node tests/api/support/e2e-server.ts",
+    "analytics:report": "node src/analytics/reports.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",

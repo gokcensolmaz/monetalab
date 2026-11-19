@@ -58,10 +58,10 @@ struct OperationView: View {
                     .accessibilityIdentifier("operation.confirm")
                 Button("Cancel", role: .cancel) {}
             }
-            .sheet(item: $operation.paywall) { context in
+            .sheet(item: $operation.paywall) { [app] context in
                 if let catalog = wallet.catalog {
                     PaywallView(
-                        model: PaywallModel(required: context.required, api: app.api, token: { [weak app] in app?.token },
+                        model: PaywallModel(required: context.required, action: context.action.id, api: app.api, token: { [weak app] in app?.token },
                                             onUnauthenticated: { [weak app] in app?.endSession() }),
                         catalog: catalog,
                         title: "Not enough credits",

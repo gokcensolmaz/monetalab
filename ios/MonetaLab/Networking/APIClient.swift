@@ -30,6 +30,15 @@ protocol MonetaLabAPI {
     func purchases(token: String) async throws -> [PurchaseRecord]
     func purchase(token: String, packageId: String, transactionId: String, mockOutcome: MockOutcome) async throws -> PurchaseResponse
     func runOperation(token: String, action: String, requestId: String) async throws -> OperationResponse
+    // M2
+    func subscriptionState(token: String) async throws -> SubscriptionStateResponse
+    func purchaseSubscription(token: String, planId: String, transactionId: String, mockOutcome: MockOutcome) async throws -> SubscriptionActionResponse
+    func changePlan(token: String, planId: String, transactionId: String, mockOutcome: MockOutcome) async throws -> SubscriptionActionResponse
+    func setAutoRenew(token: String, enabled: Bool, requestId: String) async throws -> SubscriptionActionResponse
+    func restoreSubscription(token: String) async throws -> SubscriptionStateResponse
+    func mockNotification(token: String, eventId: String, type: MockNotificationType, transactionId: String) async throws -> SubscriptionActionResponse
+    func adQuota(token: String, action: String?) async throws -> AdQuotaResponse
+    func watchAd(token: String, adEventId: String, action: String, mockOutcome: MockAdOutcome) async throws -> AdRewardResponse
 }
 
 /// Talks to the real MonetaLab backend over HTTP. No responses are faked.
@@ -56,7 +65,11 @@ final class HTTPAPIClient: MonetaLabAPI {
     private struct Empty: Decodable {}
 
     private func send<T: Decodable>(_ method: String, _ path: String, token: String? = nil, body: [String: Any]? = nil) async throws -> T {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        // `path` may carry a query ("ads/quota?action=BASIC"); appendingPathComponent alone would encode the "?".
+        let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
+        var components = URLComponents(url: baseURL.appendingPathComponent(parts[0]), resolvingAgainstBaseURL: false)!
+        if parts.count == 2 { components.percentEncodedQuery = parts[1] }
+        var request = URLRequest(url: components.url!)
         request.httpMethod = method
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -135,5 +148,43 @@ final class HTTPAPIClient: MonetaLabAPI {
 
     func runOperation(token: String, action: String, requestId: String) async throws -> OperationResponse {
         try await send("POST", "operations", token: token, body: ["action": action, "requestId": requestId])
+    }
+
+    // MARK: M2
+
+    func subscriptionState(token: String) async throws -> SubscriptionStateResponse {
+        try await send("GET", "subscriptions/current", token: token)
+    }
+
+    func purchaseSubscription(token: String, planId: String, transactionId: String, mockOutcome: MockOutcome) async throws -> SubscriptionActionResponse {
+        try await send("POST", "subscriptions/purchase", token: token,
+                       body: ["planId": planId, "transactionId": transactionId, "mockOutcome": mockOutcome.rawValue])
+    }
+
+    func changePlan(token: String, planId: String, transactionId: String, mockOutcome: MockOutcome) async throws -> SubscriptionActionResponse {
+        try await send("POST", "subscriptions/change-plan", token: token,
+                       body: ["planId": planId, "transactionId": transactionId, "mockOutcome": mockOutcome.rawValue])
+    }
+
+    func setAutoRenew(token: String, enabled: Bool, requestId: String) async throws -> SubscriptionActionResponse {
+        try await send("POST", enabled ? "subscriptions/resume" : "subscriptions/cancel", token: token, body: ["requestId": requestId])
+    }
+
+    func restoreSubscription(token: String) async throws -> SubscriptionStateResponse {
+        try await send("POST", "subscriptions/restore", token: token, body: [:])
+    }
+
+    func mockNotification(token: String, eventId: String, type: MockNotificationType, transactionId: String) async throws -> SubscriptionActionResponse {
+        try await send("POST", "subscriptions/mock-notifications", token: token,
+                       body: ["eventId": eventId, "type": type.rawValue, "transactionId": transactionId])
+    }
+
+    func adQuota(token: String, action: String?) async throws -> AdQuotaResponse {
+        try await send("GET", action.map { "ads/quota?action=\($0)" } ?? "ads/quota", token: token)
+    }
+
+    func watchAd(token: String, adEventId: String, action: String, mockOutcome: MockAdOutcome) async throws -> AdRewardResponse {
+        try await send("POST", "ads/rewards", token: token,
+                       body: ["adEventId": adEventId, "action": action, "mockOutcome": mockOutcome.rawValue])
     }
 }

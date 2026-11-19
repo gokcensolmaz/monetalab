@@ -4,6 +4,7 @@ struct MainView: View {
     @ObservedObject var app: AppModel
     @StateObject private var wallet: WalletModel
     @StateObject private var operation: OperationModel
+    @StateObject private var subscription: SubscriptionModel
 
     init(app: AppModel) {
         self.app = app
@@ -19,6 +20,15 @@ struct MainView: View {
             },
             onUnauthenticated: { [weak app] in app?.endSession(message: "Your session has ended. Please sign in again.") }
         ))
+        _subscription = StateObject(wrappedValue: SubscriptionModel(
+            api: app.api,
+            token: { [weak app] in app?.token },
+            onWallet: { [weak walletModel] w in
+                walletModel?.apply(w)
+                Task { await walletModel?.refresh() }
+            },
+            onUnauthenticated: { [weak app] in app?.endSession(message: "Your session has ended. Please sign in again.") }
+        ))
     }
 
     var body: some View {
@@ -27,6 +37,8 @@ struct MainView: View {
                 .tabItem { Label("Wallet", systemImage: "creditcard") }
             OperationView(operation: operation, wallet: wallet, app: app)
                 .tabItem { Label("Process", systemImage: "wand.and.stars") }
+            SubscriptionView(model: subscription, plans: wallet.catalog?.subscriptions ?? [])
+                .tabItem { Label("Plan", systemImage: "star.circle") }
             HistoryView(wallet: wallet)
                 .tabItem { Label("History", systemImage: "list.bullet.rectangle") }
             AccountView(app: app)
@@ -50,7 +62,7 @@ struct AccountView: View {
                         .accessibilityIdentifier("account.signOut")
                 }
                 Section {
-                    Text("M1 QA fixture. Purchases use a deterministic mock billing provider: no real payments, StoreKit or ads.")
+                    Text("QA fixture. Purchases, subscriptions and rewarded ads use deterministic mock providers: no real payments, StoreKit or ad network.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

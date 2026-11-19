@@ -3,6 +3,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { PLAN_IDS, PLANS, TRIAL_OFFER } from './subscriptions/lifecycle.ts';
 
 /** PRD §2.3. Placeholder action names; costs are authoritative here. */
 export const OPERATION_COSTS = { BASIC: 100, STANDARD: 500, ADVANCED: 800 } as const;
@@ -15,26 +16,28 @@ const OPERATION_NAMES: Record<OperationAction, string> = {
 };
 
 /**
- * PRD §2.1 subscription plans: shown as **unavailable previews** in M1 (D-003). No prices (PRD open decision #1).
- * Trial information is descriptive only. M1 cannot determine trial eligibility, so it is never presented as an offer.
+ * PRD §2.1 subscription plans, purchasable through the deterministic mock provider in M2 (D-027). No prices (PRD open
+ * decision #1). The catalog states the offer's terms only; whether THIS customer may use the trial, and the trial
+ * message, come from GET /subscriptions/current (PRD §3.1: trial messaging only when genuinely eligible).
  */
-export const SUBSCRIPTION_PREVIEWS = [
-  {
-    id: 'BASIC_WEEKLY',
-    name: 'Basic',
-    period: 'WEEKLY',
-    creditsPerPeriod: 3000,
-    introductoryOffer: { description: 'Planned: a 3-day trial with 1,000 credits. Not offered in M1; trial eligibility arrives in M2.', credits: 1000, days: 3 },
-  },
-  { id: 'PREMIUM_WEEKLY', name: 'Premium', period: 'WEEKLY', creditsPerPeriod: 6000, introductoryOffer: null },
-  { id: 'ULTRA_WEEKLY', name: 'Ultra', period: 'WEEKLY', creditsPerPeriod: 12000, introductoryOffer: null },
-].map((plan) => ({ ...plan, available: false, availability: 'Subscriptions are not available in this release (M2).' }));
+export const SUBSCRIPTION_PLANS = PLAN_IDS.map((id) => ({
+  id,
+  name: PLANS[id].name,
+  period: 'WEEKLY',
+  periodDays: PLANS[id].periodDays,
+  creditsPerPeriod: PLANS[id].credits,
+  tier: PLANS[id].tier,
+  introductoryOffer: id === TRIAL_OFFER.planId ? { kind: TRIAL_OFFER.kind, days: TRIAL_OFFER.days, credits: TRIAL_OFFER.credits } : null,
+  available: true,
+  availability: 'Mock subscription (test provider). No real payment is made.',
+}));
 
-export const REWARDED_AD_PREVIEW = {
+export const REWARDED_AD = {
   label: 'Watch an Ad — Earn 100 Credits',
   credits: 100,
-  available: false,
-  availability: 'Rewarded ads are not available in this release (M2).',
+  dailyLimit: 10,
+  available: true,
+  availability: 'Mock rewarded ad (test provider). Offered only when credits are insufficient for an operation.',
 };
 
 export function registerCatalogRoutes(app: FastifyInstance, pool: pg.Pool): void {
@@ -44,8 +47,9 @@ export function registerCatalogRoutes(app: FastifyInstance, pool: pg.Pool): void
     );
     return {
       consumables: rows.map((r) => ({ id: r.id, name: r.display_name, credits: r.credits, available: true })),
-      subscriptions: SUBSCRIPTION_PREVIEWS,
-      rewardedAd: REWARDED_AD_PREVIEW,
+      subscriptionGroup: 'MONETALAB_WEEKLY',
+      subscriptions: SUBSCRIPTION_PLANS,
+      rewardedAd: REWARDED_AD,
       operations: OPERATION_ACTIONS.map((id) => ({ id, name: OPERATION_NAMES[id], cost: OPERATION_COSTS[id] })),
     };
   });

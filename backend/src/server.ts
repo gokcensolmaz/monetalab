@@ -1,6 +1,8 @@
 import pg from 'pg';
 import { buildApp } from './app.ts';
+import { adProviderFromEnv, type AdProvider } from './ads/provider.ts';
 import { billingProviderFromEnv, type BillingProvider } from './billing/provider.ts';
+import { clockFromEnv, type Clock } from './clock.ts';
 import { databaseUrl } from './config.ts';
 
 const HOST = '127.0.0.1';
@@ -18,16 +20,20 @@ function parsePort(value: string | undefined): number {
 
 let port: number;
 let billing: BillingProvider;
+let ads: AdProvider;
+let clock: Clock;
 try {
   port = parsePort(process.env.PORT);
   billing = billingProviderFromEnv(); // refuses the mock provider when NODE_ENV=production
+  ads = adProviderFromEnv(); // same
+  clock = clockFromEnv(); // a test clock file is refused when NODE_ENV=production
 } catch (error) {
   console.error((error as Error).message);
   process.exit(1);
 }
 
 const pool = new pg.Pool({ connectionString: databaseUrl() });
-const app = buildApp({ pool, billing });
+const app = buildApp({ pool, billing, ads, clock });
 
 try {
   await app.listen({ host: HOST, port });

@@ -83,3 +83,63 @@ export async function buy(api: APIRequestContext, user: TestUser, packageId: str
 export async function spend(api: APIRequestContext, user: TestUser, action: string, requestId = `req-${randomUUID()}`) {
   return api.post('/operations', { headers: bearer(user.token), data: { action, requestId } });
 }
+
+// ---- M2 helpers --------------------------------------------------------------------------------------------------
+
+export const uid = (prefix: string) => `${prefix}-${randomUUID()}`;
+
+export async function subscribe(api: APIRequestContext, user: TestUser, planId: string, mockOutcome = 'APPROVED', transactionId = uid('sub')) {
+  return api.post('/subscriptions/purchase', { headers: bearer(user.token), data: { planId, transactionId, mockOutcome } });
+}
+
+export async function changePlan(api: APIRequestContext, user: TestUser, planId: string, mockOutcome = 'APPROVED', transactionId = uid('chg')) {
+  return api.post('/subscriptions/change-plan', { headers: bearer(user.token), data: { planId, transactionId, mockOutcome } });
+}
+
+export async function cancelAutoRenew(api: APIRequestContext, user: TestUser, requestId = uid('cancel')) {
+  return api.post('/subscriptions/cancel', { headers: bearer(user.token), data: { requestId } });
+}
+
+export async function notify(
+  api: APIRequestContext,
+  user: TestUser,
+  data: { type: 'RENEWED' | 'EXPIRED' | 'REFUNDED' | 'REVOKED'; transactionId: string; eventId?: string; periodStart?: string },
+) {
+  return api.post('/subscriptions/mock-notifications', { headers: bearer(user.token), data: { eventId: uid('evt'), ...data } });
+}
+
+export async function current(api: APIRequestContext, user: TestUser) {
+  const response = await api.get('/subscriptions/current', { headers: bearer(user.token) });
+  expect(response.status(), await response.text()).toBe(200);
+  return response.json();
+}
+
+export async function watchAd(api: APIRequestContext, user: TestUser, mockOutcome = 'COMPLETED', action = 'ADVANCED', adEventId = uid('ad')) {
+  return api.post('/ads/rewards', { headers: bearer(user.token), data: { adEventId, action, mockOutcome } });
+}
+
+/** Independent oracle: ledger rows of one type for one user, oldest first. */
+export async function dbLedger(db: pg.Pool, userId: string, entryType?: string) {
+  const { rows } = await db.query<{ entry_type: string; bucket: string; delta: number; expiration_reason: string | null }>(
+    `SELECT entry_type, bucket::text AS bucket, delta, expiration_reason FROM credit_ledger
+      WHERE user_id = $1 AND ($2::text IS NULL OR entry_type = $2) ORDER BY id`,
+    [userId, entryType ?? null],
+  );
+  return rows;
+}
+
+export async function dbAnalytics(db: pg.Pool, userId: string) {
+  const { rows } = await db.query<{ name: string; properties: Record<string, unknown> }>(
+    'SELECT name, properties FROM analytics_events WHERE user_id = $1 ORDER BY id',
+    [userId],
+  );
+  return rows;
+}
+
+export async function dbSubscription(db: pg.Pool, userId: string) {
+  const { rows } = await db.query<{ status: string; plan_id: string; pending_plan_id: string | null; auto_renew: boolean }>(
+    'SELECT status, plan_id, pending_plan_id, auto_renew FROM subscriptions WHERE user_id = $1',
+    [userId],
+  );
+  return rows[0] ?? null;
+}

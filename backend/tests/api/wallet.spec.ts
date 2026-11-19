@@ -114,23 +114,28 @@ test.describe('credit history', () => {
 });
 
 test.describe('catalog', () => {
-  test('[BR][PW-01] catalog lists the 3 packs, 3 subscription previews (unavailable), the ad preview (unavailable) and 3 operations', async ({ api }) => {
+  test('[BR][PW-01] catalog lists the 3 packs, the 3 weekly plans (mock, available), the rewarded ad and 3 operations', async ({ api }) => {
     const catalog = await (await api.get('/catalog')).json();
     expect(catalog.consumables).toEqual([
       { id: 'CREDITS_S', name: 'Credits S', credits: 5000, available: true },
       { id: 'CREDITS_M', name: 'Credits M', credits: 7000, available: true },
       { id: 'CREDITS_L', name: 'Credits L', credits: 10000, available: true },
     ]);
-    expect(catalog.subscriptions.map((p: { name: string; creditsPerPeriod: number; available: boolean }) => [p.name, p.creditsPerPeriod, p.available])).toEqual([
-      ['Basic', 3000, false],
-      ['Premium', 6000, false],
-      ['Ultra', 12000, false],
+    // PRD §2.1 (M2, D-027): Basic 3,000 / Premium 6,000 / Ultra 12,000 per week, one group, purchasable via the mock.
+    expect(catalog.subscriptionGroup).toBe('MONETALAB_WEEKLY');
+    expect(catalog.subscriptions.map((p: { id: string; name: string; creditsPerPeriod: number; periodDays: number; available: boolean }) =>
+      [p.id, p.name, p.creditsPerPeriod, p.periodDays, p.available])).toEqual([
+      ['BASIC_WEEKLY', 'Basic', 3000, 7, true],
+      ['PREMIUM_WEEKLY', 'Premium', 6000, 7, true],
+      ['ULTRA_WEEKLY', 'Ultra', 12000, 7, true],
     ]);
-    expect(catalog.subscriptions[0].introductoryOffer).toMatchObject({ credits: 1000, days: 3 });
-    // Review note: trial text is descriptive and non-actionable in M1 (D-023); eligibility belongs to M2.
-    expect(catalog.subscriptions[0].introductoryOffer.description).toMatch(/Not offered in M1/);
-    expect(catalog.subscriptions[0].introductoryOffer.description).not.toMatch(/free|eligible|start|claim/i);
-    expect(catalog.rewardedAd).toMatchObject({ label: 'Watch an Ad — Earn 100 Credits', credits: 100, available: false });
+    // Only Basic has an introductory offer (PRD §7 #4). The catalog states terms only: no marketing message, because
+    // trial messaging is per customer and only shown when eligible (GET /subscriptions/current, PRD §3.1).
+    expect(catalog.subscriptions.map((p: { introductoryOffer: unknown }) => p.introductoryOffer)).toEqual([
+      { kind: 'FREE_TRIAL', days: 3, credits: 1000 }, null, null,
+    ]);
+    expect(JSON.stringify(catalog.subscriptions)).not.toMatch(/start|claim|eligible/i);
+    expect(catalog.rewardedAd).toMatchObject({ label: 'Watch an Ad — Earn 100 Credits', credits: 100, dailyLimit: 10, available: true });
     expect(catalog.operations).toEqual([
       { id: 'BASIC', name: 'Basic processing', cost: 100 },
       { id: 'STANDARD', name: 'Standard processing', cost: 500 },

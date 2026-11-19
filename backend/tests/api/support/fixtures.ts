@@ -6,6 +6,7 @@
  *   be scoped to rows created by the same test (D-017b), and must never be unscoped UPDATE/DELETE/TRUNCATE.
  */
 import { test as base, expect, type APIRequestContext } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 import pg from 'pg';
 
 function requireEnv(name: string): string {
@@ -16,7 +17,13 @@ function requireEnv(name: string): string {
 
 export type Harness = { baseUrl: string; pid: number; port: number; serverAppName: string; dbName: string };
 
-export const test = base.extend<{ api: APIRequestContext; harness: Harness }, { db: pg.Pool }>({
+/**
+ * Controlled business clock of the second server (D-033). Only specs that run serially may use it, because the
+ * clock is shared by everything that talks to that server.
+ */
+export type ControlledClock = { api: APIRequestContext; set: (iso: string) => void };
+
+export const test = base.extend<{ api: APIRequestContext; harness: Harness; clock: ControlledClock }, { db: pg.Pool }>({
   harness: async ({}, use) => {
     await use({
       baseUrl: requireEnv('API_BASE_URL'),
@@ -29,6 +36,18 @@ export const test = base.extend<{ api: APIRequestContext; harness: Harness }, { 
   api: async ({ playwright, harness }, use) => {
     const context = await playwright.request.newContext({ baseURL: harness.baseUrl });
     await use(context);
+    await context.dispose();
+  },
+  clock: async ({ playwright }, use) => {
+    const file = requireEnv('API_CLOCK_FILE');
+    const context = await playwright.request.newContext({ baseURL: requireEnv('API_CLOCK_BASE_URL') });
+    await use({
+      api: context,
+      set: (iso: string) => {
+        if (Number.isNaN(new Date(iso).getTime())) throw new Error(`invalid clock value ${iso}`);
+        writeFileSync(file, iso);
+      },
+    });
     await context.dispose();
   },
   db: [
