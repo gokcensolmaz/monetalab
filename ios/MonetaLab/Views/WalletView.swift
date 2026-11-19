@@ -38,7 +38,7 @@ struct WalletView: View {
                 Button { Task { await wallet.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                     .accessibilityIdentifier("wallet.refresh")
             }
-            .sheet(isPresented: $showStore) {
+            .sheet(isPresented: $showStore) { [app] in
                 if let catalog = wallet.catalog {
                     PaywallView(
                         model: PaywallModel(required: nil, api: app.api, token: { [weak app] in app?.token },

@@ -60,6 +60,10 @@ struct HistoryView: View {
         case "PURCHASE_GRANT": return "Purchase \(entry.purchase?.packageId ?? "")"
         case "OPERATION_DEBIT": return "Operation \(entry.operation?.action ?? "")"
         case "SEED": return "Test credit (\(entry.seedReason ?? "seed"))"
+        case "SUBSCRIPTION_GRANT":
+            return entry.subscriptionPeriod?.kind == "TRIAL" ? "Free trial credits" : "Subscription credits (\(entry.subscriptionPeriod?.planId ?? ""))"
+        case "SUBSCRIPTION_EXPIRATION": return "Subscription credits expired (\(entry.expirationReason?.lowercased() ?? ""))"
+        case "REWARD_GRANT": return "Rewarded ad"
         default: return entry.type
         }
     }

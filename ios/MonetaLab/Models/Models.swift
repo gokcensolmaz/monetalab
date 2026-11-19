@@ -46,6 +46,11 @@ struct HistoryEntry: Codable, Equatable, Identifiable {
     let purchase: PurchaseRef?
     let operation: OperationRef?
     let seedReason: String?
+    struct PeriodRef: Codable, Equatable { let id: String; let planId: String; let kind: String; let transactionId: String }
+    struct AdRef: Codable, Equatable { let id: String; let adEventId: String }
+    var subscriptionPeriod: PeriodRef? = nil
+    var expirationReason: String? = nil
+    var adReward: AdRef? = nil
 }
 
 struct HistoryResponse: Codable { let entries: [HistoryEntry]; let nextBefore: Int? }
@@ -69,20 +74,24 @@ struct CreditPackage: Codable, Equatable, Identifiable {
     let available: Bool
 }
 
-struct SubscriptionPreview: Codable, Equatable, Identifiable {
-    struct IntroductoryOffer: Codable, Equatable { let description: String; let credits: Int; let days: Int }
+/// PRD §2.1 weekly plans, purchasable through the backend's deterministic MOCK subscription provider (M2).
+struct SubscriptionPlan: Codable, Equatable, Identifiable {
+    struct IntroductoryOffer: Codable, Equatable { let kind: String; let days: Int; let credits: Int }
     let id: String
     let name: String
     let period: String
+    let periodDays: Int
     let creditsPerPeriod: Int
+    let tier: Int
     let introductoryOffer: IntroductoryOffer?
     let available: Bool
     let availability: String
 }
 
-struct RewardedAdPreview: Codable, Equatable {
+struct RewardedAdInfo: Codable, Equatable {
     let label: String
     let credits: Int
+    let dailyLimit: Int
     let available: Bool
     let availability: String
 }
@@ -95,12 +104,12 @@ struct OperationOption: Codable, Equatable, Identifiable, Hashable {
 
 struct Catalog: Codable, Equatable {
     let consumables: [CreditPackage]
-    let subscriptions: [SubscriptionPreview]
-    let rewardedAd: RewardedAdPreview
+    let subscriptions: [SubscriptionPlan]
+    let rewardedAd: RewardedAdInfo
     let operations: [OperationOption]
 }
 
-/// Deterministic outcome requested from the backend's **mock** billing provider (M1 only, never real payments).
+/// Deterministic outcome requested from the backend's **mock** billing provider (never real payments).
 enum MockOutcome: String, Codable, CaseIterable, Identifiable {
     case approved = "APPROVED", declined = "DECLINED", cancelled = "CANCELLED"
     var id: String { rawValue }
@@ -143,6 +152,120 @@ struct OperationResult: Codable, Equatable {
 struct OperationResponse: Codable, Equatable {
     let operation: OperationResult
     let replayed: Bool
+    let wallet: Wallet
+}
+
+// MARK: - M2 subscriptions
+
+struct SubscriptionPeriod: Codable, Equatable {
+    let id: String
+    let transactionId: String
+    let planId: String
+    let kind: String
+    let startsAt: String
+    let endsAt: String
+    let credits: Int
+    var revoked: Bool? = nil
+    var disposition: String? = nil
+}
+
+struct SubscriptionInfo: Codable, Equatable {
+    let id: String
+    let planId: String
+    let planName: String
+    /// TRIAL | ACTIVE | EXPIRED | REVOKED (server-derived).
+    let status: String
+    /// Whether the entitlement is valid right now on the SERVER clock.
+    let entitled: Bool
+    let autoRenew: Bool
+    let pendingPlanId: String?
+    let renewsAt: String?
+    let expiresAt: String
+    let currentPeriod: SubscriptionPeriod
+}
+
+struct TrialInfo: Codable, Equatable {
+    struct Offer: Codable, Equatable { let planId: String; let days: Int; let credits: Int; let message: String }
+    let eligible: Bool
+    let reason: String
+    let source: String
+    /// Present only when eligible (PRD §3.1: trial messaging only when genuinely eligible).
+    let offer: Offer?
+}
+
+struct SubscriptionStateResponse: Codable, Equatable {
+    let subscription: SubscriptionInfo?
+    let trial: TrialInfo
+    let wallet: Wallet
+}
+
+struct SubscriptionActionResponse: Codable, Equatable {
+    let result: String
+    let replayed: Bool
+    let period: SubscriptionPeriod?
+    let subscription: SubscriptionInfo?
+    let trial: TrialInfo
+    let wallet: Wallet
+}
+
+/// Mock App Store server notifications (test controls only; M3 replaces them with real signed notifications).
+enum MockNotificationType: String, CaseIterable, Identifiable {
+    case renewed = "RENEWED", expired = "EXPIRED", refunded = "REFUNDED"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .renewed: return "Simulate renewal"
+        case .expired: return "Simulate expiry"
+        case .refunded: return "Simulate refund"
+        }
+    }
+}
+
+// MARK: - M2 rewarded ads
+
+/// Deterministic outcome requested from the backend's MOCK ad provider (no real ad network).
+enum MockAdOutcome: String, Codable, CaseIterable, Identifiable {
+    case completed = "COMPLETED", incomplete = "INCOMPLETE", failed = "FAILED"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .completed: return "Completed"
+        case .incomplete: return "Closed early"
+        case .failed: return "Failed to load"
+        }
+    }
+}
+
+struct AdQuota: Codable, Equatable {
+    let utcDay: String
+    let used: Int
+    let limit: Int
+    let remaining: Int
+    let resetsAt: String
+    let rewardCredits: Int
+}
+
+struct AdEligibility: Codable, Equatable {
+    let action: String
+    let eligible: Bool
+    let reason: String
+    let required: Int
+    let available: Int
+}
+
+struct AdQuotaResponse: Codable, Equatable {
+    let quota: AdQuota
+    let eligibility: AdEligibility?
+    let wallet: Wallet
+}
+
+struct AdRewardResponse: Codable, Equatable {
+    struct Attempt: Codable, Equatable { let id: String; let adEventId: String; let outcome: String; let status: String; let utcDay: String; let credits: Int }
+    let result: String
+    let replayed: Bool
+    let creditsGranted: Int
+    let attempt: Attempt
+    let quota: AdQuota
     let wallet: Wallet
 }
 
