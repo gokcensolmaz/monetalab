@@ -34,3 +34,6 @@ xcuserdata/
 *.xcuserstate
 *.xcresult
 ios/build/
+
+# Local QA evidence (xcresult bundles, xcodebuild logs). Kept on the owner's machine, never committed.
+local-evidence/

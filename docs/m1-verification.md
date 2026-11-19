@@ -2,6 +2,7 @@
 
 **Date:** 2026-11-17
 **Branch:** `slice-3-auth` (local; **not committed, not pushed, no PR**). The base is `main` @ `0d46331` (Slices 0–2 merged).
+**Status update (2026-11-18):** pushed as 5 commits, merged via **PR #2** into `main` @ `3e51fbf`. GitHub Actions `api-db-regression` passed on the PR and on `main`; see §6. The original wording above is kept as recorded.
 **Scope:** all remaining M1 work (Slices 3–8 of `docs/initial-implementation-plan.md`) done in one continuous run, as authorized by the owner. A single final owner QA review is pending.
 **Environment:** macOS (Apple Silicon), Node v24.20.0, npm 11.19.0, Docker 29.9.3 / Compose v5.7.0, `postgres:16.16-alpine`, Xcode 16.2, iPhone 16 simulator (iOS 18.1).
 
@@ -65,7 +66,7 @@ Nothing below is marked PASS based on code alone.
 | Mock consumable purchases: approved, declined, cancelled, duplicate/retried | **PASS** | `purchases.spec.ts` (21); `credit-integrity.test.ts`; iOS UI journey (cancelled, then approved); `PaywallFlowTests` (transaction id reused on network retry) |
 | Consume credits for predefined actions; block insufficient; open paywall | **PASS** | `operations.spec.ts` (24); `PaywallFlowTests`; UI journey (402 → paywall) |
 | Four credit buckets with ordered, atomic deductions | **PASS** | PRD §2.4 example end-to-end (`[BR][CR-01]`); 5 split-bucket cases; DB-level atomic overdraft rollback (`credit-integrity`) |
-| API + database automated tests and GitHub Actions PR regression | **PASS locally / NOT VERIFIED on GitHub** | Tests: §1 rows 1–6. The workflow (now with Playwright) passed a full local simulation. **A GitHub run of the extended workflow needs a push** (owner approval). The Slice 2 version of the workflow already ran green on GitHub (PR #1). |
+| API + database automated tests and GitHub Actions PR regression | **PASS locally / PASS on GitHub (run conclusion, §6); artifact contents NOT VERIFIED** | Tests: §1 rows 1–6. The workflow (now with Playwright) passed a full local simulation. **A GitHub run of the extended workflow needs a push** (owner approval). The Slice 2 version of the workflow already ran green on GitHub (PR #1). |
 | Basic iOS app capable of exercising the core paths | **PASS** | Real Xcode project; builds Debug + Release; UI journey on the simulator against the real backend |
 | Repository setup, setup instructions, test matrix and evidence in README | **PASS** | `README.md` (commands executed in this run), this report |
 
@@ -82,7 +83,7 @@ Nothing below is marked PASS based on code alone.
 | PW-01 | Subscription/Credits tabs show correct plans and packs | **PASS** | `/catalog` spec; UI journey (Subscription tab plans, purchase disabled; Credits tab packs) |
 | PW-02 | Sufficient after purchase: paywall closes to the prior screen; operation awaits confirmation | **PASS (purchase path)** / reward path **M2** | `PaywallFlowTests.testApprovedPurchaseThatCoversCost…` (run count stays 1); UI journey (no `operation.result` until re-confirmation); server shows exactly 1 operation; API spec `[PW-02]` |
 | PW-03 | Still insufficient: paywall stays open | **PASS (purchase path)** / reward path **M2** | `testStillInsufficientAfterPurchaseKeepsPaywallOpen`; declined/cancelled keep it open (unit + UI) |
-| CI-01 | PR runs deterministic API/DB regression with a report | **PASS locally / NOT VERIFIED on GitHub** | see §1 rows 6–7; needs an approved push and PR run |
+| CI-01 | PR runs deterministic API/DB regression with a report | **PASS locally / PASS on GitHub (run conclusion, §6); artifact contents NOT VERIFIED** | see §1 rows 6–7; needs an approved push and PR run |
 | TRIAL-01/02, SUB-01..06 | Subscription lifecycle | **M2** | Not implemented (PRD §1 M2). Plans shown as unavailable previews only. |
 | ADS-01..04 | Rewarded ads | **M2** | Not implemented. "Watch an Ad — Earn 100 Credits" is shown disabled with "not available in this release (M2)". |
 
@@ -133,7 +134,7 @@ Nothing below is marked PASS based on code alone.
 | Clone, start API + DB with documented commands | **PASS** (commands in the README executed here: `db:up`, `db:migrate`, `npm start`; health 200, catalog, wallet 401 without auth) |
 | Run automated tests | **PASS** (§1) |
 | Exercise the iOS UI from login through mock purchase, credit spending and paywall | **PASS** (automated UI journey on the simulator against the real backend; DB state confirmed independently) |
-| PR triggers deterministic regression with accessible results | **NOT VERIFIED for the updated workflow** (needs a push/PR); local simulation PASS |
+| PR triggers deterministic regression with accessible results | **PASS: the run triggered on PR #2 and succeeded (§6).** Artifact contents NOT VERIFIED; local simulation PASS |
 
 ---
 
@@ -177,3 +178,26 @@ Final re-run, all executed on 2026-11-18:
 | Leftovers after the run | Only the dev database `monetalab` exists; volume `monetalab_monetalab-db` intact; no server processes |
 
 **GitHub Actions run of the updated workflow:** NOT VERIFIED until the PR runs.
+
+## 6. GitHub verification after the merge (recorded 2026-11-18)
+PR #2 (`slice-3-auth` → `main`, "feat: complete MonetaLab M1 implementation") was merged on 2026-11-18 at 11:37:07 UTC as merge commit `3e51fbf`.
+- The merge commit's parents are `0d46331` (previous `main`) and `c059b05` (branch head).
+- Its tree is identical to `c059b05`, so all 5 M1 commits landed unchanged.
+
+Workflow runs (`API/DB regression`, job `api-db-regression`), read from the public GitHub REST API (`/repos/gokcensolmaz/monetalab/actions/runs` and `/pulls/2`):
+
+| Run ID | Trigger | Commit | Status | Conclusion |
+|---|---|---|---|---|
+| 44295097498 | `pull_request` (PR #2, `slice-3-auth`) | `c059b05` | completed | **success** |
+| 44296335810 | `push` to `main` (after the merge) | `3e51fbf` | completed | **success** |
+
+**Verified:** both runs completed with conclusion `success` on the commits listed. This covers the extended workflow, including the new Playwright step.
+
+**NOT VERIFIED:**
+- **Artifact contents:** the three JUnit files with 63, 73 and 102 test cases, and `playwright-report/index.html`. Downloading the artifact and reading the logs need an authenticated GitHub session, and the `gh` CLI isn't installed on this machine. The per-step results and the job summary weren't inspected either. The owner can confirm them in the run pages, or Claude can once `gh` is authenticated.
+- **The required-check gate:** `api-db-regression` was the check the PR needed, but this API read didn't fetch branch protection.
+
+Local environment after a macOS update (2026-11-18, read-only checks):
+- Docker 29.9.3; container `monetalab-db-1` is healthy.
+- The original volume `monetalab_monetalab-db` (created 2026-11-17T11:53:04Z) is intact.
+- Dev database `monetalab`: PostgreSQL 16.16 with migrations 001 and 002 applied.
