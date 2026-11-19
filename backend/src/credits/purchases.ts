@@ -41,7 +41,7 @@ type PurchaseRow = {
 };
 
 export function registerPurchaseRoutes(app: FastifyInstance, pool: pg.Pool, billing: BillingProvider): void {
-  app.post<{ Body: Body }>('/purchases', { preHandler: requireAuth(pool), schema: { body } }, async (request, reply) => {
+  app.post<{ Body: Body }>('/purchases', { onRequest: requireAuth(pool), schema: { body } }, async (request, reply) => {
     const userId = authOf(request).user.id;
     const { packageId, transactionId, mockOutcome } = request.body;
 

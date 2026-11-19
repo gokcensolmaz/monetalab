@@ -3,7 +3,8 @@
  *
  * POST /operations { action, requestId }
  * One transaction:
- *   1. Lock the user's four bucket rows (SELECT … FOR UPDATE), so spends for one user are serialized.
+ *   1. Take the per-user lock, then the user's four bucket rows (SELECT … FOR UPDATE), so spends and lifecycle
+ *      changes for one user are serialized (D-031). Credits of an ended subscription period expire first (D-029).
  *   2. If (user, requestId) already exists: same action → 200 replay of the original result; else 409.
  *   3. allocate() picks debits in SUBSCRIPTION → CONSUMABLE → REWARD → PROMOTIONAL order.
  *      Insufficient total → 402 INSUFFICIENT_CREDITS, nothing written (ROLLBACK).
@@ -17,6 +18,8 @@ import { authOf, requireAuth } from '../auth/require-auth.ts';
 import { OPERATION_ACTIONS, OPERATION_COSTS, type OperationAction } from '../catalog.ts';
 import { withTransaction } from '../db/tx.ts';
 import { ApiError } from '../http/errors.ts';
+import type { Clock } from '../clock.ts';
+import { lockUser, reconcileUser } from '../subscriptions/service.ts';
 import { allocate, BUCKET_PRIORITY, type Bucket } from './allocate.ts';
 import { readWallet, type Wallet } from './wallet.ts';
 
@@ -48,13 +51,16 @@ async function debitsOf(tx: pg.PoolClient, operationId: string): Promise<Record<
   return debits;
 }
 
-export function registerOperationRoutes(app: FastifyInstance, pool: pg.Pool): void {
-  app.post<{ Body: Body }>('/operations', { preHandler: requireAuth(pool), schema: { body } }, async (request, reply) => {
+export function registerOperationRoutes(app: FastifyInstance, pool: pg.Pool, clock: Clock): void {
+  app.post<{ Body: Body }>('/operations', { onRequest: requireAuth(pool), schema: { body } }, async (request, reply) => {
     const userId = authOf(request).user.id;
     const { action, requestId } = request.body;
     const cost = OPERATION_COSTS[action];
 
+    const now = clock.now();
     const outcome = await withTransaction<Outcome>(pool, async (tx) => {
+      await lockUser(tx, userId);
+      await reconcileUser(tx, userId, now);
       const before = await readWallet(tx, userId, true); // row locks held until COMMIT/ROLLBACK
 
       const existing = await tx.query<OperationRow>(
